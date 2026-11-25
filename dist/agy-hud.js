@@ -818,30 +818,46 @@ function readHEAD(dir) {
   if (!import_node_path3.default.isAbsolute(gitDir)) {
     gitDir = import_node_path3.default.join(dir, gitDir);
   }
+  if (!isUnsafeGitDir(dir) && isUnsafeGitDir(gitDir)) {
+    return null;
+  }
   try {
     return import_node_fs5.default.readFileSync(import_node_path3.default.join(gitDir, "HEAD"), "utf8");
   } catch {
     return null;
   }
 }
+function isUnsafeGitDir(gitDir) {
+  if (gitDir === "" || new RegExp("\\p{Cc}", "u").test(gitDir)) {
+    return true;
+  }
+  return /^[/\\]{2}/.test(gitDir);
+}
 function parseGitDirFile(raw) {
   if (!raw.startsWith("gitdir:")) {
     return "";
   }
-  return raw.slice("gitdir:".length).trim();
+  const gitDir = raw.slice("gitdir:".length).trim();
+  return isUnsafeGitDir(gitDir) ? "" : gitDir;
 }
 function parseHEAD(head) {
+  if (head === "" || /[\p{Cc}\p{Cf}]/u.test(head)) {
+    return "";
+  }
+  let name;
   if (head.startsWith("ref:")) {
     const ref = head.slice("ref:".length).trim();
     if (ref.startsWith("refs/heads/")) {
-      return ref.slice("refs/heads/".length);
+      name = ref.slice("refs/heads/".length);
+    } else {
+      name = import_node_path3.default.basename(ref);
     }
-    return import_node_path3.default.basename(ref);
+  } else if (head.length > 7) {
+    name = head.slice(0, 7);
+  } else {
+    name = head;
   }
-  if (head.length > 7) {
-    return head.slice(0, 7);
-  }
-  return head;
+  return name.length > 80 ? name.slice(0, 80) : name;
 }
 
 // src/ansi.ts
@@ -907,9 +923,12 @@ function formatCost(usd) {
   return "<$0.001";
 }
 var titleColumns = 24;
+function sanitizeInlineText(raw) {
+  return raw.replace(new RegExp("\\p{Cc}", "gu"), " ").replace(new RegExp("(?![\\u200C\\u200D\\u{E0020}-\\u{E007F}])\\p{Cf}", "gu"), "").trim().split(/\s+/).filter(Boolean).join(" ");
+}
 function renderTitle(raw, config) {
   if (!config.showTitle || typeof raw !== "string") return "";
-  const text = raw.replace(new RegExp("\\p{Cc}", "gu"), " ").replace(new RegExp("(?![\\u200C\\u200D\\u{E0020}-\\u{E007F}])\\p{Cf}", "gu"), "").trim().split(/\s+/).filter(Boolean).join(" ");
+  const text = sanitizeInlineText(raw);
   if (visibleLen(text) === 0) return "";
   const clipped = visibleLen(text) > titleColumns ? `${truncateColumns(text, titleColumns - 1)}\u2026` : text;
   return colorize(clipped, colorMuted, config.color);
@@ -935,7 +954,10 @@ function render(payload, opts) {
 function renderMultiline(payload, config, width, modelSegment, ctxPct, quota, branch2, stateLabel) {
   const line1Parts = [colorize(modelSegment, colorBlue, config.color)];
   if (config.showCWD && payload.cwd) {
-    line1Parts.push(colorize(withIcon(config, "\uF07C ", "") + import_node_path4.default.basename(payload.cwd), colorYellow, config.color));
+    const dirName = sanitizeInlineText(import_node_path4.default.basename(payload.cwd));
+    if (dirName !== "") {
+      line1Parts.push(colorize(withIcon(config, "\uF07C ", "") + dirName, colorYellow, config.color));
+    }
   }
   if (config.showGitBranch && branch2 !== "") {
     line1Parts.push(colorize(renderGitSegment(branch2, config), colorMagenta, config.color));
@@ -1444,7 +1466,7 @@ function state(raw) {
     case "error":
       return "Error";
     default:
-      return title(raw.replace(/_/g, " "));
+      return title(sanitizeInlineText(raw).replace(/_/g, " "));
   }
 }
 function stateColor(label) {
@@ -1891,12 +1913,12 @@ function renderStatusline(input, cfg = defaultConfig(), cache = null) {
   }
   let branch2 = "";
   if (cfg.showGitBranch) {
-    branch2 = gitBranchFromPayload(payload);
+    branch2 = sanitizedBranch(gitBranchFromPayload(payload));
     if (branch2 === "") {
       branch2 = sanitizedBranch(payload.vcs?.branch ?? "");
     }
     if (branch2 === "" && shouldUseProcessCWD(payload.cwd ?? "")) {
-      branch2 = branch(".");
+      branch2 = sanitizedBranch(branch("."));
     }
     if (branch2 === "") {
       branch2 = sanitizedBranch(process.env.AGY_HUD_GIT_BRANCH ?? "");

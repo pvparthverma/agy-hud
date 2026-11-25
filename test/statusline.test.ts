@@ -1188,3 +1188,11 @@ test("malformed non-string cache timestamp never crashes rendering, and negative
     assert.doesNotMatch(out, /Reset|↻|\d\d:\d\d/);
   }
 });
+
+test("cwd basename and unknown agent_state cannot inject terminal control sequences", () => {
+  const payload = fixturePayload();
+  payload.cwd = "/tmp/repo\x1b]52;c;Zm9v\x07\u202Edir";
+  payload.agent_state = "custom\x1b[31m_state\x07";
+  const out = render(payload, { config: { ...defaultConfig(), color: false }, gitBranch: "main" });
+  assert.doesNotMatch(out, /[\x00-\x09\x0b-\x1f\x7f-\x9f\u202E]/);
+});

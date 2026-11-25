@@ -55,6 +55,9 @@ function readHEAD(dir: string): string | null {
   if (!path.isAbsolute(gitDir)) {
     gitDir = path.join(dir, gitDir);
   }
+  if (!isUnsafeGitDir(dir) && isUnsafeGitDir(gitDir)) {
+    return null;
+  }
   try {
     return fs.readFileSync(path.join(gitDir, "HEAD"), "utf8");
   } catch {
@@ -62,23 +65,42 @@ function readHEAD(dir: string): string | null {
   }
 }
 
+// Reject Windows UNC/network paths (\\server\share, //server/share, \\?\..., \\.\...) and control
+// characters so a crafted `.git` file in an untrusted repository cannot trigger outbound SMB
+// connections or read device paths.
+export function isUnsafeGitDir(gitDir: string): boolean {
+  if (gitDir === "" || /\p{Cc}/u.test(gitDir)) {
+    return true;
+  }
+  return /^[/\\]{2}/.test(gitDir);
+}
+
 function parseGitDirFile(raw: string): string {
   if (!raw.startsWith("gitdir:")) {
     return "";
   }
-  return raw.slice("gitdir:".length).trim();
+  const gitDir = raw.slice("gitdir:".length).trim();
+  return isUnsafeGitDir(gitDir) ? "" : gitDir;
 }
 
 function parseHEAD(head: string): string {
+  // Legitimate git refs and commit hashes never contain control or format characters; reject any
+  // value carrying ESC/CSI/OSC/BEL, embedded newlines, or bidi overrides.
+  if (head === "" || /[\p{Cc}\p{Cf}]/u.test(head)) {
+    return "";
+  }
+  let name: string;
   if (head.startsWith("ref:")) {
     const ref = head.slice("ref:".length).trim();
     if (ref.startsWith("refs/heads/")) {
-      return ref.slice("refs/heads/".length);
+      name = ref.slice("refs/heads/".length);
+    } else {
+      name = path.basename(ref);
     }
-    return path.basename(ref);
+  } else if (head.length > 7) {
+    name = head.slice(0, 7);
+  } else {
+    name = head;
   }
-  if (head.length > 7) {
-    return head.slice(0, 7);
-  }
-  return head;
+  return name.length > 80 ? name.slice(0, 80) : name;
 }

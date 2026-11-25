@@ -40,12 +40,12 @@ export function renderStatusline(input: string, cfg: Config = defaultConfig(), c
   }
   let branch = "";
   if (cfg.showGitBranch) {
-    branch = gitBranchFromPayload(payload);
+    branch = sanitizedBranch(gitBranchFromPayload(payload));
     if (branch === "") {
       branch = sanitizedBranch(payload.vcs?.branch ?? "");
     }
     if (branch === "" && shouldUseProcessCWD(payload.cwd ?? "")) {
-      branch = gitBranch(".");
+      branch = sanitizedBranch(gitBranch("."));
     }
     if (branch === "") {
       branch = sanitizedBranch(process.env.AGY_HUD_GIT_BRANCH ?? "");

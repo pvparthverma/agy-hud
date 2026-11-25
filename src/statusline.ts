@@ -116,9 +116,13 @@ const titleColumns = 24;
 // terminal as commands. Format characters (bidi overrides, zero-width spaces) are dropped, so an
 // invisible title cannot take up columns or reorder the line. ZWNJ, ZWJ and tag characters stay: they
 // shape visible text (word breaks, ZWJ emoji, subdivision flags) and cost no columns of their own.
+function sanitizeInlineText(raw: string): string {
+  return raw.replace(/\p{Cc}/gu, " ").replace(/(?![\u200C\u200D\u{E0020}-\u{E007F}])\p{Cf}/gu, "").trim().split(/\s+/).filter(Boolean).join(" ");
+}
+
 function renderTitle(raw: unknown, config: Config): string {
   if (!config.showTitle || typeof raw !== "string") return "";
-  const text = raw.replace(/\p{Cc}/gu, " ").replace(/(?![\u200C\u200D\u{E0020}-\u{E007F}])\p{Cf}/gu, "").trim().split(/\s+/).filter(Boolean).join(" ");
+  const text = sanitizeInlineText(raw);
   if (visibleLen(text) === 0) return "";
   const clipped = visibleLen(text) > titleColumns ? `${truncateColumns(text, titleColumns - 1)}…` : text;
   return colorize(clipped, colorMuted, config.color);
@@ -147,7 +151,10 @@ export function render(payload: Payload, opts: RenderOptions): string {
 function renderMultiline(payload: Payload, config: Config, width: number, modelSegment: string, ctxPct: number, quota: QuotaDisplay, branch: string, stateLabel: string): string {
   const line1Parts = [colorize(modelSegment, colorBlue, config.color)];
   if (config.showCWD && payload.cwd) {
-    line1Parts.push(colorize(withIcon(config, " ", "") + path.basename(payload.cwd), colorYellow, config.color));
+    const dirName = sanitizeInlineText(path.basename(payload.cwd));
+    if (dirName !== "") {
+      line1Parts.push(colorize(withIcon(config, " ", "") + dirName, colorYellow, config.color));
+    }
   }
   if (config.showGitBranch && branch !== "") {
     line1Parts.push(colorize(renderGitSegment(branch, config), colorMagenta, config.color));
@@ -744,7 +751,7 @@ function state(raw: string): string {
     case "error":
       return "Error";
     default:
-      return title(raw.replace(/_/g, " "));
+      return title(sanitizeInlineText(raw).replace(/_/g, " "));
   }
 }
 
